@@ -1,0 +1,162 @@
+; cf. http://thestarman.pcministry.com/asm/mbr/Win2kmbr.htm
+; cf. http://www.rayknights.org/pc_boot/w2k_mbr.htm
+; segments et stack
+00000000  33C0              xor ax,ax
+00000002  8ED0              mov ss,ax
+00000004  BC007C            mov sp,0x7c00		; on est loadé forcément à 0x7C00, ça permet d'avoir un pointeur sur le code du MBR
+00000007  FB                sti					; activation interruptions
+00000008  50                push ax				; mov es, ax
+00000009  07                pop es
+0000000A  50                push ax				; mov ds, ax
+0000000B  1F                pop ds
+0000000C  FC                cld
+; copie 0x1e5 octets de 0x7c1b à 0x61b
+0000000D  BE1B7C            mov si,0x7c1b
+00000010  BF1B06            mov di,0x61b
+00000013  50                push ax
+00000014  57                push di
+00000015  B9E501            mov cx,0x1e5
+00000018  F3A4              rep movsb
+0000001A  CB                retf				; jmp sur 0x61b (push/ret)
+; routine copiée
+0000001B  BDBE07            mov bp,0x7be		; table des partitions
+0000001E  B104              mov cl,0x4			; cl = 4 partitions max
+00000020  386E00            cmp [bp+0x0],ch		; test si 1er octet == 0x00
+00000023  7C09              jl 0x2e				; si l'octet > 0x00 on continue
+00000025  7513              jnz 0x3a			; != 0 (donc négatif) -> erreur
+00000027  83C510            add bp,byte +0x10	; prochaine entrée
+0000002A  E2F4              loop 0x20			; boucle (dec cl)
+0000002C  CD18              int 0x18			; on a rien trouvé de bootable, interruption 0x18 (pas de disque)
+; check des autres partitions, si elles sont bootables ou pas
+0000002E  8BF5              mov si,bp			; current partition
+00000030  83C610            add si,byte +0x10	; si = next partition
+00000033  49                dec cx				; nbpartitions--
+00000034  7419              jz 0x4f				; 0 : fini de parcourir
+00000036  382C              cmp [si],ch			; test si 1er octet == 0x0
+00000038  74F6              jz 0x30				; oui -> boucle, sinon : erreur
+; message d'erreur "Table de partition non valide"
+0000003A  A0B507            mov al,[0x7b5]		; al = 0x2C
+0000003D  B407              mov ah,0x7
+0000003F  8BF0              mov si,ax			; si : pointe sur "Table de partition non valide" (0x072C)
+00000041  AC                lodsb				; charge dans al
+00000042  3C00              cmp al,0x0			; 0 ?
+00000044  74FC              jz 0x42				; oui : boucle infinie
+00000046  BB0700            mov bx,0x7			
+00000049  B40E              mov ah,0xe
+0000004B  CD10              int 0x10			; passe la couleur à 0x7 et écrit AL
+0000004D  EBF2              jmp short 0x41		; continue de charger la string
+; fini de parcourir
+0000004F  884E10            mov [bp+0x10],cl	; bp pointe sur la partition primaire, set le 1er octet suivant la définition à 0
+00000052  E84600            call word 0x9b
+00000055  732A              jnc 0x81			; skip
+00000057  FE4610            inc byte [bp+0x10]	; set le flag à +1
+0000005A  807E040B          cmp byte [bp+0x4],0xb	; teste si SystemID == FAT32
+0000005E  740B              jz 0x6b
+00000060  807E040C          cmp byte [bp+0x4],0xc	; teste si SystemID == FAT32 (+ BIOS INT 0x13 enabled)
+00000064  7405              jz 0x6b
+00000066  A0B607            mov al,[0x7b6]		; load "Erreur lors du chargement du système d'exploitati"
+00000069  75D2              jnz 0x3d			; affiche l'erreur
+0000006B  80460206          add byte [bp+0x2],0x6			; ajoute 6 à partition.starthead
+0000006F  83460806          add word [bp+0x8],byte +0x6		; ajoute 0x06 à partition.reliativesectors
+00000073  83560A00          adc word [bp+0xa],byte +0x0		; utilisé pour setter le CF je suppose 
+00000077  E82100            call word 0x9b		; load du 1er secteur ) 0x00007C00
+0000007A  7305              jnc 0x81			; skip (success de la fonction, CF = 1)
+0000007C  A0B607            mov al,[0x7b6]		; load "Erreur lors du chargement du système d'exploitati"
+0000007F  EBBC              jmp short 0x3d		; affiche l'erreur
+00000081  813EFE7D55AA      cmp word [0x7dfe],0xaa55	; check le magic number
+00000087  740B              jz 0x94				; pas d'erreur
+00000089  807E1000          cmp byte [bp+0x10],0x0	; teste si la 1ère fonction a failed ou pas
+0000008D  74C8              jz 0x57				; si non, on teste le FAT32 et on fait le check dessus
+0000008F  A0B707            mov al,[0x7b7]		; load "Système d'exploitation absent"
+00000092  EBA9              jmp short 0x3d		; affiche l'erreur
+00000094  8BFC              mov di,sp			; sp = 0x7C00
+00000096  1E                push ds				; push 0x0000
+00000097  57                push di				; push 0x7C00
+00000098  8BF5              mov si,bp			; SI = partition identifiée comme primaire
+0000009A  CB                retf				; JMP sur 0x00007C00, c'est là où on a loadé le 1er secteur de la partition
+; fonction appelée (load le 1er secteur à 0x00007C00)
+0000009B  BF0500            mov di,0x5			; 0x5
+0000009E  8A5600            mov dl,[bp+0x0]		; 1er octet de la partoche
+000000A1  B408              mov ah,0x8			; ah = 0x08
+000000A3  CD13              int 0x13			; read_drive_parameters (http://en.wikipedia.org/wiki/INT_13H#INT_13h_AH.3D08h:_Read_Drive_Parameters)
+000000A5  7223              jc 0xca				; error
+000000A7  8AC1              mov al,cl
+000000A9  243F              and al,0x3f			; al = 5 derniers bits = nombre de secteurs
+000000AB  98                cbw					; passe de byte à word (use AX)
+000000AC  8ADE              mov bl,dh			; bl = dh = logical last index of heads
+000000AE  8AFC              mov bh,ah
+000000B0  43                inc bx				; bx = nombre de têtes
+000000B1  F7E3              mul bx				; ax = ax * bx. C-a-d nombre de secteurs * nombre de têtes.
+000000B3  8BD1              mov dx,cx			; dx = retour cx du 
+000000B5  86D6              xchg dl,dh			; échange des registres
+000000B7  B106              mov cl,0x6
+000000B9  D2EE              shr dh,cl			; logical last index of cylinders
+000000BB  42                inc dx				; dx +1 : nombre de cylindres
+000000BC  F7E2              mul dx				; dx:ax = nombre de cylindres * nombre de secteurs * nombre de têtes = nombre total de secteurs sur le disque
+000000BE  39560A            cmp [bp+0xa],dx		; compare le nombre de secteurss du disque et le high word de relative sectors
+000000C1  7723              ja 0xe6				; au dessus (donc relative au dessus du nombre de cylindres)
+000000C3  7205              jc 0xca				; au dessous (donc relative au dessous du nombre de cylindres, normal)
+000000C5  394608            cmp [bp+0x8],ax		; compare le nombre de secteurs du disque et le low word de relative sectors
+000000C8  731C              jnc 0xe6			; au dessus (donc relative au dessus du nombre de cylindres)
+; boucle de lecture standard via Read Sectors From Drive
+000000CA  B80102            mov ax,0x201		; on est okay, http://en.wikipedia.org/wiki/INT_13H#INT_13h_AH.3D02h:_Read_Sectors_From_Drive
+000000CD  BB007C            mov bx,0x7c00		; buffer addr pointer
+000000D0  8B4E02            mov cx,[bp+0x2]		; track / sector (start head de la partition)
+000000D3  8B5600            mov dx,[bp+0x0]		; DH = 0, DL = drive (primary 0x80)
+000000D6  CD13              int 0x13			; lecture d'un secteur
+000000D8  7351              jnc 0x12b			; No error, retour
+000000DA  4F                dec di				; di--
+000000DB  744E              jz 0x12b			; 5 fails, retour
+000000DD  32E4              xor ah,ah			; ah = 0
+000000DF  8A5600            mov dl,[bp+0x0]		; dl = 0x80 = disque
+000000E2  CD13              int 0x13			; Reset Disk Drive
+000000E4  EBE4              jmp short 0xca		; boucle
+; si l'offset relative sectors est au dessus du nb de secteurs du disque, boucle de lecture via Extended Read Sectors From Drive
+000000E6  8A5600            mov dl,[bp+0x0]		; dl = 1er byte de partition
+000000E9  60                pushaw				; save les registres
+000000EA  BBAA55            mov bx,0x55aa		; requis pour int 0x13
+000000ED  B441              mov ah,0x41			; requis pour int 0x13 si ah = 0x41
+000000EF  CD13              int 0x13			; check extensions present (http://en.wikipedia.org/wiki/INT_13H#INT_13h_AH.3D41h:_Check_Extensions_Present)
+000000F1  7236              jc 0x129			; CF = 1 : Not present, setc / ret
+000000F3  81FB55AA          cmp bx,0xaa55		; test BX (setté par l'int 13)
+000000F7  7530              jnz 0x129			; erreur : setc / ret
+000000F9  F6C101            test cl,0x1			; test CL (1 : Device Access using the packet structure)
+000000FC  742B              jz 0x129			; erreur : setc / ret
+000000FE  61                popaw				; okay, on peut donc faire un Extended Read Sectors From Drive
+000000FF  60                pushaw				; on crée le "Disk Address Packet" (http://en.wikipedia.org/wiki/INT_13H#INT_13h_AH.3D42h:_Extended_Read_Sectors_From_Drive)
+00000100  6A00              push byte +0x0		; absolute number of the start of the sectors to be read
+00000102  6A00              push byte +0x0		; idem
+00000104  FF760A            push word [bp+0xa]	; idem offset high de relative sectors de la partition
+00000107  FF7608            push word [bp+0x8]	; idem offset low de relative sectors de la partition
+0000010A  6A00              push byte +0x0		; address of read buffer : 0x0000
+0000010C  68007C            push word 0x7c00	; address of read buffer : 0x7c00
+0000010F  6A01              push byte +0x1		; number of sectors to be read (push 0x0001)
+00000111  6A10              push byte +0x10		; sizeofDAP + unused (push 0x0010)
+00000113  B442              mov ah,0x42			; Extended Read Sectors From Drive
+00000115  8BF4              mov si,sp			; DS:SI = segment:offset pointer to the DAP
+00000117  CD13              int 0x13			; int !
+00000119  61                popaw				; pop les registres
+0000011A  61                popaw				; pop again ??? Normalement, c'est un pushaw, pas un pop...
+0000011B  730E              jnc 0x12b			; CF = 0, no error, RET
+0000011D  4F                dec di				; di--
+0000011E  740B              jz 0x12b			; retour si di == 0
+00000120  32E4              xor ah,ah			; ah = 0
+00000122  8A5600            mov dl,[bp+0x0]		; dl = partition[0]
+00000125  CD13              int 0x13			; Reset Disk Drive
+00000127  EBD6              jmp short 0xff		; jump sur le Extended Read Sectors From Drive, en gros il teste 5 fois de lire 
+00000129  61                popaw				; pop !
+0000012A  F9                stc					; CF = 1, return (en bref, erreur)
+0000012B  C3                ret
+
+error1 			0000012C  "Table de partition non valide"
+error2 			0000014A  "Erreur lors du chargement du système d'exploitati"
+error3 			0000017C  "Système d'exploitation absent"
+stroffsets		000001B5  2C4A7C								; offsets des 3 chaînes de caractères précédentes
+disksign		000001B8  97DC97DC
+nullbytes		000001BC  0000									; reserved
+						  0 1 2 3 4 5 6 7 8 9 A B C D E F
+partitiontab1 	000001BE  8001010007FEFFFF3F000000D9A63F01
+partitiontab2	000001CE  00000000000000000000000000000000
+partitiontab3	000001DE  00000000000000000000000000000000
+partitiontab4	000001EE  00000000000000000000000000000000
+magicnumberend	000001FE  55AA
