@@ -1,0 +1,8 @@
+TARGETNAME = idt
+TARGETPATH = obj
+TARGETTYPE = DRIVER
+
+INCLUDES = %BUILD%\inc
+LIBS = %BUILD%\lib
+
+SOURCES = main.c idt.c
