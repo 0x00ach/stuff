@@ -196,6 +196,5 @@ ULONG __stdcall int6Check(PINTTERUPT_STACK savedstack)
 {
 	DbgPrint("INT 6 - IRQL %x -- RETURN ADDR %.8x -- TID %x\n",KeGetCurrentIrql(), savedstack->InterruptReturnAddress, PsGetCurrentThreadId());
 	savedstack->InterruptReturnAddress = savedstack->InterruptReturnAddress+4;
-	//savedstack->SavedFlags &=0xfffffeff;
 	return 1;
 }
