@@ -1,0 +1,19 @@
+Conditional break on load of "MYDLL" (x86)
+
+  dt ntdll!_UNICODE_STRING Buffer @$rcx bu kernel32!LoadLibraryExW ";as /mu ${/v:MyAlias} poi(@esp+4); .if ( $spat( \"${MyAlias}\", \"*MYDLL*\" ) != 0 ) { kn; } .else { gc }"
+
+Logs CreateFileW calls + inherit handles
+  
+  bp kernelbase!CreateFileW " .printf "CreateFileW : %mu" , @rcx ; .if ( @r9 != 0) { r $t1 = poi(@r9 + @@(#FIELD_OFFSET(wintypes!SECURITY_ATTRIBUTES, bInheritHandle))) ; .if( @$t1 == 0) { .printf " , do not inherit handles\n" } .else { .printf ", inherit handles\n" } } .else { .printf ", no security attributes\n" } 
+
+Lists users opened reg keys
+
+  .foreach( Line {!reg dumppool} ) { .if( $spat("${Line}", "ffff*") == 1 ) { r @$t1 = ${Line} } ; .if( $spat("${Line}", "*\Users\*") == 1 ) { !reg openkeys @$t1 }  } }
+
+Lists EPROCESS + Process names (faster than !process 0 0)
+
+  !list -x "da @@c++( ((nt!_EPROCESS*)( @$extret #FIELD_OFFSET(nt!_EPROCESS,ActiveProcessLinks) ))->ImageFileName ) ; ?? @$extret - #FIELD_OFFSET(nt!_EPROCESS,ActiveProcessLinks) " nt!PsActiveProcessHead
+
+List +WX PTEs in the kernel
+
+  .foreach (Toto {!address}){.if($spat("${Toto}", "ffff`") != 0) { r @$t1 = 0 ; .foreach (Titi {!pte ${Toto}} ){ .if($spat("${Titi}", "KREV") != 0) { r @$t1 = 0 } ; .if($spat("${Titi}", "KWEV") != 0) { r @$t1 = 1 } ; .if($spat("${Titi}", "valid") != 0) { r @$t1 = 0 } ; .if($spat("${Titi}","K-V") != 0) {r @$t1 = 0 }  } ;.if(@$t1 == 1) { .echo ${Toto} } }}
