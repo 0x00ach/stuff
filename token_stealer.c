@@ -365,7 +365,7 @@ int main(int argc, char** argv) {
 		printf("Usage : %s <system process PID> / getsystem / scan\n"
 			"<system process PID> : try on PID process only\n"
 			"get_shells : try getting as user shells as we can (recursive in order to gain more privileges)\n"
-			"scan : continuous scan, e.g using unprivileged account\n", argv[0]);
+			"scan : continuous scan\n", argv[0]);
 		return 0;
 	}
 
