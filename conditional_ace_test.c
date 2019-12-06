@@ -8,6 +8,7 @@
 
 #define ADDRIGHTSSDDL_FULL_ACCESS "(XA;;FA;;;BU; (!(1 == 1)))"
 #define ADDRIGHTSSDDL_KEY_ALL_ACCESS "(XA;;KA;;;BU; (!(1 == 1)))"
+
 BOOL AddCustomACEToSD(PSECURITY_DESCRIPTOR pOldSecurityDescriptor, PSECURITY_DESCRIPTOR* pNewSecurityDescriptor, char* NewACESDDL) {
 	LPSTR sddl = NULL;
 	char NewSDDL[0x1000] = { 0 };
@@ -42,6 +43,141 @@ BOOL AddCustomACEToSD(PSECURITY_DESCRIPTOR pOldSecurityDescriptor, PSECURITY_DES
 
 }
 
+VOID ParseDACL(PACL Acl) {
+	ULONG i = 0, j = 0;
+	PVOID xPtr = NULL;
+	PACE_HEADER pACE = NULL;
+	PACCESS_ALLOWED_ACE pAACE = NULL;
+	PACCESS_ALLOWED_OBJECT_ACE pAOACE = NULL;
+	PISID pSid = NULL;
+
+	printf("\tDACL raw data:\n"
+		"\t\tDacl->AceCount: %d\n"
+		"\t\tDacl->AclSize: %d\n"
+		"\t\tDacl->AclRevision: %d\n",
+		Acl->AceCount,
+		Acl->AclSize,
+		Acl->AclRevision);
+	pACE = (PACE_HEADER)((SIZE_T)Acl + sizeof(ACL));
+	for(i = 0; i< Acl->AceCount;i++) {
+		printf("\t\tDacl->ACE #%d\n", i);
+		printf("\t\t\tHeader.AceSize: %d\n"
+			"\t\t\tHeader.AceType: %x\n",
+			pACE->AceSize,
+			pACE->AceType);
+
+		if (pACE->AceType == ACCESS_ALLOWED_ACE_TYPE)
+		printf("\t\t\tHeader.AceType: ACCESS_ALLOWED_ACE_TYPE\n");
+		else if (pACE->AceType == ACCESS_DENIED_ACE_TYPE)
+		printf("\t\t\tHeader.AceType: ACCESS_DENIED_ACE_TYPE\n");
+		else if (pACE->AceType == ACCESS_ALLOWED_COMPOUND_ACE_TYPE)
+		printf("\t\t\tHeader.AceType: ACCESS_ALLOWED_COMPOUND_ACE_TYPE\n");
+		else if (pACE->AceType == ACCESS_ALLOWED_OBJECT_ACE_TYPE)
+		printf("\t\t\tHeader.AceType: ACCESS_ALLOWED_OBJECT_ACE_TYPE\n");
+		else if (pACE->AceType == ACCESS_DENIED_OBJECT_ACE_TYPE)
+		printf("\t\t\tHeader.AceType: ACCESS_DENIED_OBJECT_ACE_TYPE\n");
+		else if (pACE->AceType == ACCESS_ALLOWED_CALLBACK_ACE_TYPE)
+		printf("\t\t\tHeader.AceType: ACCESS_ALLOWED_CALLBACK_ACE_TYPE\n");
+		else if (pACE->AceType == ACCESS_DENIED_CALLBACK_ACE_TYPE)
+		printf("\t\t\tHeader.AceType: ACCESS_DENIED_CALLBACK_ACE_TYPE\n");
+		else if (pACE->AceType == ACCESS_ALLOWED_CALLBACK_OBJECT_ACE_TYPE)
+		printf("\t\t\tHeader.AceType: ACCESS_ALLOWED_CALLBACK_OBJECT_ACE_TYPE\n");
+		else if (pACE->AceType == ACCESS_DENIED_CALLBACK_OBJECT_ACE_TYPE)
+		printf("\t\t\tHeader.AceType: ACCESS_DENIED_CALLBACK_OBJECT_ACE_TYPE\n");
+
+		printf("\t\t\tHeader.AceFlags: %d ", pACE->AceFlags);
+		if ((pACE->AceFlags & OBJECT_INHERIT_ACE) != 0)
+		printf("OBJECT_INHERIT_ACE ");
+		if ((pACE->AceFlags & CONTAINER_INHERIT_ACE) != 0)
+		printf("CONTAINER_INHERIT_ACE ");
+		if ((pACE->AceFlags & NO_PROPAGATE_INHERIT_ACE) != 0)
+		printf("NO_PROPAGATE_INHERIT_ACE ");
+		if ((pACE->AceFlags & INHERIT_ONLY_ACE) != 0)
+		printf("INHERIT_ONLY_ACE ");
+		if ((pACE->AceFlags & INHERITED_ACE) != 0)
+		printf("INHERITED_ACE ");
+		if ((pACE->AceFlags & VALID_INHERIT_FLAGS) != 0)
+		printf("VALID_INHERIT_FLAGS ");
+		if ((pACE->AceFlags & SUCCESSFUL_ACCESS_ACE_FLAG) != 0)
+		printf("SUCCESSFUL_ACCESS_ACE_FLAG ");
+		if ((pACE->AceFlags & FAILED_ACCESS_ACE_FLAG) != 0)
+		printf("FAILED_ACCESS_ACE_FLAG ");
+		printf("\n");
+
+		if (pACE->AceType == ACCESS_ALLOWED_OBJECT_ACE_TYPE ||
+			pACE->AceType == ACCESS_DENIED_OBJECT_ACE_TYPE ||
+			pACE->AceType == ACCESS_ALLOWED_CALLBACK_OBJECT_ACE_TYPE ||
+			pACE->AceType == ACCESS_DENIED_CALLBACK_OBJECT_ACE_TYPE
+			) {
+			pAOACE = (PACCESS_ALLOWED_OBJECT_ACE)pACE;
+			printf("\t\t\tInheritedObjectType: %.8x-%.4x-%.4x-%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x\n"
+				"\t\t\tMask: 0x%x\n"
+				"\t\t\tObjectType: %.8x-%.4x-%.4x-%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x\n",
+				pAOACE->InheritedObjectType.Data1,
+				pAOACE->InheritedObjectType.Data2,
+				pAOACE->InheritedObjectType.Data3,
+				pAOACE->InheritedObjectType.Data4[0],
+				pAOACE->InheritedObjectType.Data4[1],
+				pAOACE->InheritedObjectType.Data4[2],
+				pAOACE->InheritedObjectType.Data4[3],
+				pAOACE->InheritedObjectType.Data4[4],
+				pAOACE->InheritedObjectType.Data4[5],
+				pAOACE->InheritedObjectType.Data4[6],
+				pAOACE->InheritedObjectType.Data4[7],
+				pAOACE->Mask,
+				pAOACE->ObjectType.Data1,
+				pAOACE->ObjectType.Data2,
+				pAOACE->ObjectType.Data3,
+				pAOACE->ObjectType.Data4[0],
+				pAOACE->ObjectType.Data4[1],
+				pAOACE->ObjectType.Data4[2],
+				pAOACE->ObjectType.Data4[3],
+				pAOACE->ObjectType.Data4[4],
+				pAOACE->ObjectType.Data4[5],
+				pAOACE->ObjectType.Data4[6],
+				pAOACE->ObjectType.Data4[7]);
+			pSid = (PISID)&pAOACE->SidStart;
+
+		}
+		else {
+			pAACE = (PACCESS_ALLOWED_ACE)pACE;
+			printf("\t\t\tMask: 0x%x\n", pAACE->Mask);
+			pSid = (PISID)&pAACE->SidStart;
+		}
+
+		printf(
+			"\t\t\tSID.SubAuthorityCount: %d\n"
+			"\t\t\tSID : S-%d-0x%x%x%x%x%x%x",
+			pSid->SubAuthorityCount,
+			pSid->Revision,
+			pSid->IdentifierAuthority.Value[0],
+			pSid->IdentifierAuthority.Value[1],
+			pSid->IdentifierAuthority.Value[2],
+			pSid->IdentifierAuthority.Value[3],
+			pSid->IdentifierAuthority.Value[4],
+			pSid->IdentifierAuthority.Value[5]);
+
+		xPtr = &pSid->SubAuthority;
+		for (j = 0; j < pSid->SubAuthorityCount; j++) {
+			printf("-%d", *(PULONG)xPtr);
+			xPtr = (PVOID)((SIZE_T)xPtr + sizeof(ULONG));
+		}
+		printf("\n");
+
+		if ((SIZE_T)xPtr < (SIZE_T)pACE + pACE->AceSize){
+			printf("\t\t\tRemaining data:\n\t\t\t\t");
+			while ((SIZE_T)xPtr < (SIZE_T)pACE + pACE->AceSize) {
+				printf("%.2x", *(PUCHAR)xPtr);
+				xPtr = (PVOID)((SIZE_T)xPtr + 1);
+			}
+			printf("\n");
+		}
+
+		pACE = (PACE_HEADER)((SIZE_T)pACE + pACE->AceSize);
+	} 
+	
+}
+
 VOID PrintSD(PSECURITY_DESCRIPTOR pSecurityDescriptor) {
 	LPSTR sddl = NULL;
 
@@ -57,16 +193,14 @@ VOID PrintSD(PSECURITY_DESCRIPTOR pSecurityDescriptor) {
 		"\tSD->Control: %x\n"
 		"\tSD->Sbz1: %d\n"
 		"\tSD->Dacl: %p\n"
-		"\tSD->Dacl->AceCount: %d\n"
-		"\tSD->Dacl->AclSize: %d\n"
 		"",
 		sddl,
 		((PISECURITY_DESCRIPTOR_RELATIVE)pSecurityDescriptor)->Revision,
 		((PISECURITY_DESCRIPTOR_RELATIVE)pSecurityDescriptor)->Control,
 		((PISECURITY_DESCRIPTOR_RELATIVE)pSecurityDescriptor)->Sbz1,
-		(SIZE_T)((PISECURITY_DESCRIPTOR_RELATIVE)pSecurityDescriptor)->Dacl + (SIZE_T)pSecurityDescriptor,
-		((PACL)(((PISECURITY_DESCRIPTOR_RELATIVE)pSecurityDescriptor)->Dacl + (SIZE_T)pSecurityDescriptor))->AceCount,
-		((PACL)(((PISECURITY_DESCRIPTOR_RELATIVE)pSecurityDescriptor)->Dacl + (SIZE_T)pSecurityDescriptor))->AclSize);
+		(SIZE_T)((PISECURITY_DESCRIPTOR_RELATIVE)pSecurityDescriptor)->Dacl + (SIZE_T)pSecurityDescriptor);
+
+	ParseDACL(((PACL)(((PISECURITY_DESCRIPTOR_RELATIVE)pSecurityDescriptor)->Dacl + (SIZE_T)pSecurityDescriptor)));
 }
 
 
@@ -210,19 +344,17 @@ fail:
 
 int main(int argc, char** argv){
 	char* target = NULL;
-	if (argc <= 2) {
-		printf("Usage: %s -reg|-file <path>\n"
-			"e.g: -file C:\\test.txt\n"
-			"e.g: -reg SOFTWARE\\Microsoft (HKLM hive)\n", argv[0]);
-		return 0;
+	if (argc > 2) {
+		if (!_stricmp(argv[1], "-reg"))
+			setToReg(HKEY_LOCAL_MACHINE, argv[2]);
 
+		if (!_stricmp(argv[1], "-file"))
+			setToFile(argv[2]);
 	}
-
-	if (!_stricmp(argv[1], "-reg"))
-		setToReg(HKEY_LOCAL_MACHINE, argv[2]);
-
-	if (!_stricmp(argv[1], "-file"))
-		setToFile(argv[2]);
-
+	else{
+		printf("Usage: %s -reg|-file <path>\n"
+		"e.g: -file C:\\test.txt\n"
+		"e.g: -reg SOFTWARE\\Microsoft (HKLM hive)\n", argv[0]);
+	}
 	return 0;
 }
